@@ -1,0 +1,21 @@
+;
+; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+.pio_version 0 // only requires PIO version 0
+
+.program i2c_bus_analyzer
+
+.wrap_target
+wait_for_start:
+    wait 0 pin 0            ;wait for logic 0 on pin 0 (SDA) which is the start bit
+    push
+    wait 1 pin 0
+
+    ;mov x, pins             ;move pin 0 (SDA) and pin 1 (SCL) to x register
+    ;set y, 0x2              ;make sure SDA is low with SCL high, the start bit
+    ;jmp x!=y wait_for_start
+    ;mov isr, ! y            ;set the input shift register to something recognizable 0xfffffffd
+    ;push                    ;push the input shift register to the Rx FIFO so the system can read it
+.wrap
