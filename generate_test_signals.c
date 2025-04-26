@@ -4,10 +4,10 @@
 
 //*************************************************************************************************
 
-#define I2C_PORT i2c0
-// GPIO 4,5 is actually pins 6,7 on the pico board
-#define I2C_SDA_PIN 4
-#define I2C_SCL_PIN 5
+#define I2C_PORT i2c1
+// GPIO 2,3 is actually pins 4,5 on the pico board
+#define I2C_SDA_PIN 2
+#define I2C_SCL_PIN 3
 
 //*************************************************************************************************
 
@@ -23,10 +23,9 @@ void test_signal_init()
 
 //*************************************************************************************************
 
-int test_signal_read(void)
+int test_signal_read(uint8_t* buffer, size_t len)
 {
-    uint8_t data;
-    int ret = i2c_read_blocking(I2C_PORT, 0x27, &data, 1, false);
+    int ret = i2c_read_blocking(I2C_PORT, 0x27, buffer, len, false);
     return ret;
 }
 

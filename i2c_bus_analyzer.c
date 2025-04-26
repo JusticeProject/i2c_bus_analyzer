@@ -9,8 +9,8 @@
 //*************************************************************************************************
 
 // We will actually use GPIO 0 and 1, which are pins 1,2 on the pico board.
-// For the debug features connect a wire from GPIO 0 to GPIO 4. (physical pin 1 to 6)
-// Also connect a wire from GPIO 1 to GPIO 5. (physical pin 2 to 7)
+// For the debug features connect a wire from GPIO 0 to GPIO 2. (physical pin 1 to 4)
+// Also connect a wire from GPIO 1 to GPIO 3. (physical pin 2 to 5)
 #define BUS_ANALYZER_INPUT_SDA 0
 #define BUS_ANALYZER_INPUT_SCL 1
 
@@ -92,8 +92,9 @@ int main() {
         }
         else if (c == 'r')
         {
-            int result = test_signal_read();
-            printf("test_signal_read returned %d\n", result);
+            uint8_t data = 0;
+            int result = test_signal_read(&data, 1);
+            printf("test_signal_read returned %d with data = 0x%x\n", result, data);
         }
         else if (c == 'w')
         {
