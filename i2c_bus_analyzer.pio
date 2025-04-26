@@ -7,15 +7,53 @@
 
 .program i2c_bus_analyzer
 
+;pin 0 is SDA (GPIO 0, physical pin 1)
+;pin 1 is SCL (GPIO 1, physical pin 2)
+
 .wrap_target
 wait_for_start:
-    wait 0 pin 0            ;wait for logic 0 on pin 0 (SDA) which is the start bit
-    push
-    wait 1 pin 0
+    wait 0 pin 0                ;wait for logic 0 on pin 0 (SDA) which is the start bit
+    in pins, 2                  ;move both pin values to the input shift register
+    mov x, isr                  ;move pin values to x
+    set y, 0b10                 ;make sure SDA is low with SCL high, the start bit
+    jmp x!=y wait_for_start
+    mov isr, ~y                 ;set the input shift register to something recognizable 0xfffffffd
+    push                        ;push the input shift register to the Rx FIFO so the system can read it, clears the register, autopush doesn't work here
 
-    ;mov x, pins             ;move pin 0 (SDA) and pin 1 (SCL) to x register
-    ;set y, 0x2              ;make sure SDA is low with SCL high, the start bit
-    ;jmp x!=y wait_for_start
-    ;mov isr, ! y            ;set the input shift register to something recognizable 0xfffffffd
-    ;push                    ;push the input shift register to the Rx FIFO so the system can read it
+
+
+    set x, 8                    ;loop 9 times
+wait_for_bit:
+    wait 0 pin 1
+    wait 1 pin 1 [10]           ;SCL goes high
+    in pins, 1                  ;grab SDA
+    jmp x-- wait_for_bit
+    push                        ;push the 9 bits
+
+
+
+    wait 0 pin 1
+    wait 1 pin 1
+    in pins, 1                  ;grab SDA in case it is another byte transfer
+    jmp pin wait_for_byte_or_start
+
+
+
+wait_for_byte_or_stop:
+    jmp pin stop
+    
+    jmp wait_for_byte_or_stop
+
+
+
+wait_for_byte_or_start:
+    jmp pin wait_for_byte_or_start
+
+    jmp wait_for_start
+
+
+stop:
+    mov isr, x                 ;TODO: will x always be 0xFFFFFFFF??
+    push
+
 .wrap

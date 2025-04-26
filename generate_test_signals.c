@@ -29,3 +29,12 @@ int test_signal_read(void)
     int ret = i2c_read_blocking(I2C_PORT, 0x27, &data, 1, false);
     return ret;
 }
+
+//*************************************************************************************************
+
+int test_signal_write(void)
+{
+    uint8_t data = 0xaa;
+    int ret = i2c_write_blocking(I2C_PORT, 0x27, &data, 1, false);
+    return ret;
+}
