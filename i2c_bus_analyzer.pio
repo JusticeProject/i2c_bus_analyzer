@@ -1,8 +1,3 @@
-;
-; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
-;
-; SPDX-License-Identifier: BSD-3-Clause
-;
 .pio_version 0 // only requires PIO version 0
 
 .program i2c_bus_analyzer
@@ -13,36 +8,39 @@
 ;pin 0 is SDA (GPIO 0, physical pin 1)
 ;pin 1 is SCL (GPIO 1, physical pin 2)
 
+;Remember that we have GPIO 0 connected to GPIO2, GPIO 1 connected to GPIO 3
+;This means SDA=0, SCL=1 will get repeated as 0b1010
+
 .wrap_target
 wait_for_start:
-    wait 0 pin 0                ;wait for logic 0 on pin 0 (SDA) which is the start bit
-    mov x, pins                 ;move pin values to x
-    set y, 0b1010               ;make sure SDA is low with SCL high, remember that we have GPIO 0 connected to GPIO2, GPIO 1 connected to GPIO 3
+    wait 0 pin 0                      ;wait for logic 0 on pin 0 (SDA) which is the start bit
+    mov x, pins                       ;move pin values to x
+    set y, 0b1010                     ;make sure SDA is low with SCL high
     jmp x!=y wait_for_start
 
-    set y, 0b1                   ;add the start bit to the input shift register
+    set y, 0b1                        ;add the start bit to the input shift register
     mov isr, y
 
 
-    wait 0 pin 1                ;wait for SCL to go low
+    wait 0 pin 1                      ;wait for SCL to go low
 
-    
+
 wait_for_byte:
-    set x, 8                    ;loop 9 times
+    set x, 8                          ;loop 9 times, each time we will shift in a bit of data, 8 bits of data + ACK/NACK
 wait_for_new_bit:
-    wait 1 pin 1 [10]           ;SCL goes high
-    in pins, 1                  ;grab SDA
-    wait 0 pin 1
-    jmp x-- wait_for_new_bit
-    push                        ;push the 9 bits
+    wait 1 pin 1 [8]                  ;SCL goes high, delay some cycles since it is not edge triggered, may need to adjust this if using high bus speeds
+    in pins, 1                        ;grab SDA
+    wait 0 pin 1                      ;SCL goes low
+    jmp x-- wait_for_new_bit          ;get more bits if we need to, jump if x!=0, it decrements after we do the check
+    push                              ;push the 9 bits (plus the start bit if we put it in isr) to the FIFO so the main thread can grab it
 
 
     wait 1 pin 1
-    in pins, 1                  ;grab SDA in case it is another byte transfer
-    jmp pin wait_for_byte_or_start
+    in pins, 1                        ;grab SDA in case it is another byte transfer
+    jmp pin wait_for_byte_or_start    ;the jmp pin is pin 0, jump if the value is 1
 
 
-    ;it's 0b10 so wait for new byte or stop
+                                      ;it's 0b10 so wait for new byte or stop
 wait_for_byte_or_stop:
     ;if it's 0b11 then go to stop
     jmp pin stop
