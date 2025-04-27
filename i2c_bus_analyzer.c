@@ -2,8 +2,13 @@
 #include <stdlib.h>
 
 #include "pico/stdlib.h"
+#include "pico/multicore.h"
+#include "pico/util/queue.h"
 #include "hardware/pio.h"
+
+// auto generated header file
 #include "i2c_bus_analyzer.pio.h"
+
 #include "generate_test_signals.h"
 
 //*************************************************************************************************
@@ -17,6 +22,15 @@
 // Don't connect anything to the other GPIO pins on the pico.
 #define BUS_ANALYZER_SDA_GPIO_PIN 0
 #define BUS_ANALYZER_SCL_GPIO_PIN 1
+
+//*************************************************************************************************
+
+// global variables
+PIO pio;
+uint sm;
+uint offset;
+
+queue_t msg_queue;
 
 //*************************************************************************************************
 
@@ -41,10 +55,10 @@ void i2c_bus_analyzer_program_init(PIO pio, uint sm, uint offset)
     gpio_disable_pulls(BUS_ANALYZER_SCL_GPIO_PIN);
 
     int result = pio_sm_set_consecutive_pindirs(pio, sm, BUS_ANALYZER_SDA_GPIO_PIN, 2, false);
-    printf("set_consecutive_pindirs returned %d\n", result);
+    //printf("set_consecutive_pindirs returned %d\n", result);
 
     result = pio_sm_init(pio, sm, offset, &c);
-    printf("pio_sm_init returned %d\n", result);
+    //printf("pio_sm_init returned %d\n", result);
     pio_sm_set_enabled(pio, sm, true);
 }
 
@@ -53,7 +67,7 @@ void i2c_bus_analyzer_program_init(PIO pio, uint sm, uint offset)
 void i2c_bus_analyzer_program_restart(PIO pio, uint sm)
 {
     uint8_t pc = pio_sm_get_pc(pio, sm);
-    printf("before restart pc = %u\n", pc);
+    //printf("before restart pc = %u\n", pc);
 
     pio_sm_set_enabled(pio, sm, false);
     pio_sm_clear_fifos(pio, sm);
@@ -63,17 +77,17 @@ void i2c_bus_analyzer_program_restart(PIO pio, uint sm)
     pio_sm_exec(pio, sm, pio_encode_jmp(0));
 
     pio_sm_set_enabled(pio, sm, true);
-    printf("done restarting the PIO\n");
+    //printf("done restarting the PIO\n");
 
     pc = pio_sm_get_pc(pio, sm);
-    printf("after restart pc = %u\n", pc);
+    //printf("after restart pc = %u\n", pc);
 }
 
 //*************************************************************************************************
 
-void interpret_data(uint32_t data)
+void send_data_over_usb(uint32_t data)
 {
-    printf("pio_sm_get returned 0x%x    ", data);
+    //printf("pio_sm_get returned 0x%x    ", data);
     
     if (data == 0xfffffff8)
     {
@@ -99,83 +113,84 @@ void interpret_data(uint32_t data)
 
 //*************************************************************************************************
 
+void core1_entry()
+{
+    while (true)
+    {
+        uint32_t rx = pio_sm_get_blocking(pio, sm);
+        queue_try_add(&msg_queue, &rx);
+    }
+}
+
+//*************************************************************************************************
+
 int main() {
     stdio_init_all();
 
+    // This will activate pull-ups, so the i2c bus will be in a known state when we start PIO right after this.
+    // If the i2c bus pins are pulled low by default then rise it could cause problems in the PIO state machine logic.
     test_signal_init();
 
-    PIO pio;
-    uint sm;
-    uint offset;
+    bool success = pio_claim_free_sm_and_add_program_for_gpio_range(
+        &i2c_bus_analyzer_program, &pio, &sm, &offset, BUS_ANALYZER_SDA_GPIO_PIN, 2, true);
+    //printf("pio_claim returned success=%d sm=%u offset=%u\n", (int)success, sm, offset);
+    hard_assert(success);
+    i2c_bus_analyzer_program_init(pio, sm, offset);
 
-    while (1)
+    queue_init(&msg_queue, sizeof(uint32_t), 1000);
+    multicore_launch_core1(core1_entry);
+
+    while (true)
     {
+        uint32_t rx;
+        bool newData = queue_try_remove(&msg_queue, &rx);
+        if (newData)
+        {
+            send_data_over_usb(rx);
+        }
+
         int c = getchar_timeout_us(0);
+        if (PICO_ERROR_TIMEOUT == c)
+        {
+            continue;
+        }
+
         if (c == 'h')
         {
             printf("hello\n");
-        }
-        else if (c == 'i')
-        {
-            bool success = pio_claim_free_sm_and_add_program_for_gpio_range(
-                &i2c_bus_analyzer_program, &pio, &sm, &offset, BUS_ANALYZER_SDA_GPIO_PIN, 2, true);
-            printf("pio_claim returned success=%d sm=%u offset=%u\n", (int)success, sm, offset);
-            hard_assert(success);
-            i2c_bus_analyzer_program_init(pio, sm, offset);
         }
         else if (c == 'r')
         {
             uint8_t data = 0;
             int result = test_signal_read(&data, 1);
-            printf("test_signal_read returned %d with data = 0x%x\n", result, data);
+            //printf("test_signal_read returned %d with data = 0x%x\n", result, data);
         }
         else if (c == 'w')
         {
             int result = test_signal_write();
-            printf("test_signal_write returned %d\n", result);
+            //printf("test_signal_write returned %d\n", result);
         }
         else if (c == 'e')
         {
             uint8_t buffer[2];
             int ret = test_signal_read_write(buffer, 2);
-            printf("test_signal_read_write returned %d buffer[0] = 0x%x buffer[1] = 0x%x\n", ret, buffer[0], buffer[1]);
+            //printf("test_signal_read_write returned %d buffer[0] = 0x%x buffer[1] = 0x%x\n", ret, buffer[0], buffer[1]);
         }
         else if (c == 'm')
         {
             // test the MPU6050 IMU
-            printf("initializing the IMU...\n");
             mpu6050_init();
-            printf("...done\n");
         }
         else if (c == 'n')
         {
             int16_t acceleration[3], gyro[3], temp;
             mpu6050_read_raw(acceleration, gyro, &temp);
-
-            // These are the raw numbers from the chip, so will need tweaking to be really useful.
-            // See the datasheet for more information
-            printf("Acc. X = %d, Y = %d, Z = %d\n", acceleration[0], acceleration[1], acceleration[2]);
-            printf("Gyro. X = %d, Y = %d, Z = %d\n", gyro[0], gyro[1], gyro[2]);
-            // Temperature is simple so use the datasheet calculation to get deg C.
-            // Note this is chip temperature.
             printf("Temp. = %f\n", (temp / 340.0) + 36.53);
-        }
-        else if (c == 'f')
-        {
-            uint level = pio_sm_get_rx_fifo_level(pio, sm);
-            printf("pio_sm_get_rx_fifo_level returned %u\n", level);
-            if (level > 0)
-            {
-                uint32_t rx = pio_sm_get(pio, sm);
-                interpret_data(rx);
-            }
         }
         else if (c == 's')
         {
             i2c_bus_analyzer_program_restart(pio, sm);
         }
-
-        sleep_ms(10);
     }
 
     // This will free resources and unload our program

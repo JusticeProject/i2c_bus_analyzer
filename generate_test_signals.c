@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "hardware/i2c.h"
 #include "pico/stdlib.h"
 #include "generate_test_signals.h"
@@ -80,6 +81,8 @@ void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3], int16_t *temp) {
     i2c_write_blocking(I2C_PORT, MPU6050_ADDR, &val, 1, true); // true to keep master control of bus
     i2c_read_blocking(I2C_PORT, MPU6050_ADDR, buffer, 6, false);
 
+    printf("0x%x 0x%x 0x%x 0x%x 0x%x 0x%x\n", buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5]);
+
     for (int i = 0; i < 3; i++) {
         accel[i] = (buffer[i * 2] << 8 | buffer[(i * 2) + 1]);
     }
@@ -90,6 +93,8 @@ void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3], int16_t *temp) {
     i2c_write_blocking(I2C_PORT, MPU6050_ADDR, &val, 1, true);
     i2c_read_blocking(I2C_PORT, MPU6050_ADDR, buffer, 6, false);  // False - finished with bus
 
+    printf("0x%x 0x%x 0x%x 0x%x 0x%x 0x%x\n", buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5]);
+
     for (int i = 0; i < 3; i++) {
         gyro[i] = (buffer[i * 2] << 8 | buffer[(i * 2) + 1]);;
     }
@@ -99,6 +104,8 @@ void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3], int16_t *temp) {
     val = 0x41;
     i2c_write_blocking(I2C_PORT, MPU6050_ADDR, &val, 1, true);
     i2c_read_blocking(I2C_PORT, MPU6050_ADDR, buffer, 2, false);  // False - finished with bus
+
+    printf("0x%x 0x%x\n", buffer[0], buffer[1]);
 
     *temp = buffer[0] << 8 | buffer[1];
 }
