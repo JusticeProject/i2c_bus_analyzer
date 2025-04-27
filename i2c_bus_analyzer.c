@@ -9,10 +9,14 @@
 //*************************************************************************************************
 
 // We will actually use GPIO 0 and 1, which are pins 1,2 on the pico board.
-// For the debug features connect a wire from GPIO 0 to GPIO 2. (physical pin 1 to 4)
+// Connect the I2C device being tested to GPIO 0 (SDA) and GPIO 1 (SCL).
+// We also need to connect GPIO 0,1 to another I2C bus on the pico. This is used 
+// for some of the debug features but also the PIO now expects them to be connected. Thus:
+// Connect a wire from GPIO 0 to GPIO 2. (physical pin 1 to 4)
 // Also connect a wire from GPIO 1 to GPIO 3. (physical pin 2 to 5)
-#define BUS_ANALYZER_INPUT_SDA 0
-#define BUS_ANALYZER_INPUT_SCL 1
+// Don't connect anything to the other GPIO pins on the pico.
+#define BUS_ANALYZER_SDA_GPIO_PIN 0
+#define BUS_ANALYZER_SCL_GPIO_PIN 1
 
 //*************************************************************************************************
 
@@ -20,23 +24,23 @@ void i2c_bus_analyzer_program_init(PIO pio, uint sm, uint offset)
 {
     pio_sm_config c = i2c_bus_analyzer_program_get_default_config(offset);
 
-    sm_config_set_in_pins(&c, BUS_ANALYZER_INPUT_SDA); // set the base for the input pins
-    sm_config_set_jmp_pin(&c, BUS_ANALYZER_INPUT_SDA);
+    sm_config_set_in_pins(&c, BUS_ANALYZER_SDA_GPIO_PIN); // set the base for the input pins
+    sm_config_set_jmp_pin(&c, BUS_ANALYZER_SDA_GPIO_PIN);
     sm_config_set_in_shift(&c, false, false, 0); // shift left when inputting the data, it's MSB first
     //sm_config_set_in_shift(&c, false, true, 9); // shift left when inputting the data, it's MSB first
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
-    pio_gpio_init(pio, BUS_ANALYZER_INPUT_SDA);
-    pio_gpio_init(pio, BUS_ANALYZER_INPUT_SCL);
+    pio_gpio_init(pio, BUS_ANALYZER_SDA_GPIO_PIN);
+    pio_gpio_init(pio, BUS_ANALYZER_SCL_GPIO_PIN);
 
     // Want high impedance because they are inputs. By default it uses pull-downs, which combined
     // with pull-ups from the i2c devices causes a voltage divider and the bus voltage stays around 1.6V.
     // Do I need gpio_set_dir(pin, GPIO_IN)??
     //gpio_pull_up(pin);
     //gpio_pull_up(pin + 1);
-    gpio_disable_pulls(BUS_ANALYZER_INPUT_SDA);
-    gpio_disable_pulls(BUS_ANALYZER_INPUT_SCL);
+    gpio_disable_pulls(BUS_ANALYZER_SDA_GPIO_PIN);
+    gpio_disable_pulls(BUS_ANALYZER_SCL_GPIO_PIN);
 
-    int result = pio_sm_set_consecutive_pindirs(pio, sm, BUS_ANALYZER_INPUT_SDA, 2, false);
+    int result = pio_sm_set_consecutive_pindirs(pio, sm, BUS_ANALYZER_SDA_GPIO_PIN, 2, false);
     printf("set_consecutive_pindirs returned %d\n", result);
 
     result = pio_sm_init(pio, sm, offset, &c);
@@ -55,14 +59,42 @@ void i2c_bus_analyzer_program_restart(PIO pio, uint sm)
     pio_sm_clear_fifos(pio, sm);
     pio_sm_restart(pio, sm);
 
-    // it looks like the program counter doesn't start at 0
-    pio_sm_exec(pio, sm, pio_encode_jmp(32 - i2c_bus_analyzer_program.length)); // jump to the beginning of the program when we restart
+    // jump to the beginning of the program when we restart
+    pio_sm_exec(pio, sm, pio_encode_jmp(0));
 
     pio_sm_set_enabled(pio, sm, true);
     printf("done restarting the PIO\n");
 
     pc = pio_sm_get_pc(pio, sm);
     printf("after restart pc = %u\n", pc);
+}
+
+//*************************************************************************************************
+
+void interpret_data(uint32_t data)
+{
+    printf("pio_sm_get returned 0x%x    ", data);
+    
+    if (data == 0xfffffff8)
+    {
+        printf("STOP,,,\n");
+    }
+    else
+    {
+        if (data & 0x200)
+        {
+            printf("START,");
+            printf("0x%x,", (data >> 2) & 0x7F);
+            printf((data & 0x2) ? "READ," : "WRITE,");
+            printf((data & 0x1) ? "NACK\n" : "ACK\n");
+        }
+        else
+        {
+            printf("BYTE,");
+            printf("0x%x,,", (data >> 1) & 0xFF);
+            printf((data & 0x1) ? "NACK\n" : "ACK\n");
+        }
+    }
 }
 
 //*************************************************************************************************
@@ -85,8 +117,9 @@ int main() {
         }
         else if (c == 'i')
         {
-            bool success = pio_claim_free_sm_and_add_program_for_gpio_range(&i2c_bus_analyzer_program, &pio, &sm, &offset, BUS_ANALYZER_INPUT_SDA, 2, true);
-            printf("pio_claim returned %d\n", (int)success);
+            bool success = pio_claim_free_sm_and_add_program_for_gpio_range(
+                &i2c_bus_analyzer_program, &pio, &sm, &offset, BUS_ANALYZER_SDA_GPIO_PIN, 2, true);
+            printf("pio_claim returned success=%d sm=%u offset=%u\n", (int)success, sm, offset);
             hard_assert(success);
             i2c_bus_analyzer_program_init(pio, sm, offset);
         }
@@ -101,6 +134,32 @@ int main() {
             int result = test_signal_write();
             printf("test_signal_write returned %d\n", result);
         }
+        else if (c == 'e')
+        {
+            uint8_t buffer[2];
+            int ret = test_signal_read_write(buffer, 2);
+            printf("test_signal_read_write returned %d buffer[0] = 0x%x buffer[1] = 0x%x\n", ret, buffer[0], buffer[1]);
+        }
+        else if (c == 'm')
+        {
+            // test the MPU6050 IMU
+            printf("initializing the IMU...\n");
+            mpu6050_init();
+            printf("...done\n");
+        }
+        else if (c == 'n')
+        {
+            int16_t acceleration[3], gyro[3], temp;
+            mpu6050_read_raw(acceleration, gyro, &temp);
+
+            // These are the raw numbers from the chip, so will need tweaking to be really useful.
+            // See the datasheet for more information
+            printf("Acc. X = %d, Y = %d, Z = %d\n", acceleration[0], acceleration[1], acceleration[2]);
+            printf("Gyro. X = %d, Y = %d, Z = %d\n", gyro[0], gyro[1], gyro[2]);
+            // Temperature is simple so use the datasheet calculation to get deg C.
+            // Note this is chip temperature.
+            printf("Temp. = %f\n", (temp / 340.0) + 36.53);
+        }
         else if (c == 'f')
         {
             uint level = pio_sm_get_rx_fifo_level(pio, sm);
@@ -108,7 +167,7 @@ int main() {
             if (level > 0)
             {
                 uint32_t rx = pio_sm_get(pio, sm);
-                printf("pio_sm_get returned 0x%x\n", rx);
+                interpret_data(rx);
             }
         }
         else if (c == 's')

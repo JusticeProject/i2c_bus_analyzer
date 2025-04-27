@@ -7,6 +7,9 @@
 
 .program i2c_bus_analyzer
 
+;make sure the program is loaded at addr 0, this allows us to easily reset it to 0
+.origin 0
+
 ;pin 0 is SDA (GPIO 0, physical pin 1)
 ;pin 1 is SCL (GPIO 1, physical pin 2)
 
@@ -16,13 +19,12 @@ wait_for_start:
     mov x, pins                 ;move pin values to x
     set y, 0b1010               ;make sure SDA is low with SCL high, remember that we have GPIO 0 connected to GPIO2, GPIO 1 connected to GPIO 3
     jmp x!=y wait_for_start
-    mov isr, ~y                 ;set the input shift register to something recognizable 0xfffffff5
-    push                        ;push the input shift register to the Rx FIFO so the system can read it, clears the register, autopush doesn't work here
+
+    set y, 0b1                   ;add the start bit to the input shift register
+    mov isr, y
 
 
-
-    wait 0 pin 1
-
+    wait 0 pin 1                ;wait for SCL to go low
 
     
 wait_for_byte:
@@ -35,12 +37,9 @@ wait_for_new_bit:
     push                        ;push the 9 bits
 
 
-
-
     wait 1 pin 1
     in pins, 1                  ;grab SDA in case it is another byte transfer
     jmp pin wait_for_byte_or_start
-
 
 
     ;it's 0b10 so wait for new byte or stop
@@ -54,7 +53,6 @@ wait_for_byte_or_stop:
     jmp !y wait_for_new_bit
 
     jmp wait_for_byte_or_stop
-
 
 
     ;it's 0b11 so wait for new byte or start
@@ -71,7 +69,6 @@ check_for_start:
     set y, 0b1010
     jmp x!= y wait_for_byte_or_start
     jmp wait_for_start
-
 
 
 stop:
