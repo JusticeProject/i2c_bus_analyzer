@@ -81,7 +81,7 @@ void interpret_data(uint32_t data)
     }
     else
     {
-        if (data & 0x200)
+        if (data & 0x400)
         {
             printf("START,");
             printf("0x%x,", (data >> 2) & 0x7F);

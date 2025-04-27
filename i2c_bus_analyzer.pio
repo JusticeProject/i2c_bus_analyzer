@@ -17,9 +17,7 @@ wait_for_start:
     mov x, pins                       ;move pin values to x
     set y, 0b1010                     ;make sure SDA is low with SCL high
     jmp x!=y wait_for_start
-
-    set y, 0b1                        ;add the start bit to the input shift register
-    mov isr, y
+    mov isr, y                        ;add 0b1010 to the input shift register, when the main thread detects this it will mean a start bit
 
 
     wait 0 pin 1                      ;wait for SCL to go low
@@ -32,45 +30,48 @@ wait_for_new_bit:
     in pins, 1                        ;grab SDA
     wait 0 pin 1                      ;SCL goes low
     jmp x-- wait_for_new_bit          ;get more bits if we need to, jump if x!=0, it decrements after we do the check
-    push                              ;push the 9 bits (plus the start bit if we put it in isr) to the FIFO so the main thread can grab it
+    push                              ;push the 9 bits (plus the start bit if we put it in isr) to the FIFO so the system can grab it, isr gets cleared
 
 
     wait 1 pin 1
+    set x, 7                          ;if we get a stop then x will be a known value, it also sets up the loop counter in case there is another byte
     in pins, 1                        ;grab SDA in case it is another byte transfer
+
+
+                                      ;at this point SCL is 1 so it could be 10 or 11
+                                      ;there are four things that could happen:
+                                      ;10 -> 11 is a stop
+                                      ;10 -> 00 is a new byte
+                                      ;11 -> 10 is a start
+                                      ;11 -> 01 is a new byte
+
     jmp pin wait_for_byte_or_start    ;the jmp pin is pin 0, jump if the value is 1
 
 
-                                      ;it's 0b10 so wait for new byte or stop
-wait_for_byte_or_stop:
-    ;if it's 0b11 then go to stop
-    jmp pin stop
+wait_for_byte_or_stop:                ;it's 10 so wait for new byte or stop
+    jmp pin stop                      ;if it changes to 11 then it's a stop
 
-    ;if SCL is low, then it's a byte, and we already grabbed the first bit
-    set x, 7
-    mov y, pins
-    jmp !y wait_for_new_bit
+    mov y, pins                       ;move the pin values to y
+    jmp !y wait_for_new_bit           ;if it's 00 then it's a byte, and we already grabbed the first bit
 
-    jmp wait_for_byte_or_stop
+    jmp wait_for_byte_or_stop         ;it must still be 10, loop again
 
 
-    ;it's 0b11 so wait for new byte or start
-wait_for_byte_or_start:
-    ;if it's 0b01 then it's a byte
-    mov x, pins                 ;move pin values to x
-    set y, 0b0101
-    jmp x!=y check_for_start
-    set x, 7
+wait_for_byte_or_start:               ;it's 11 so wait for new byte or start
+    mov x, pins                       ;move pin values to x
+    set y, 0b0101                     ;if it's 01 then it's a byte
+    jmp x!=y check_for_start          ;if not equal to (01)01 then jump a few instructions ahead to do another check
+    set x, 7                          ;it is 01, it's a byte, set up x again
     jmp wait_for_new_bit
 
-    ;if it's 0b10 it's a start
 check_for_start:
-    set y, 0b1010
-    jmp x!= y wait_for_byte_or_start
-    jmp wait_for_start
+    set y, 0b1010                     ;if it's 10 it's a start
+    jmp x!= y wait_for_byte_or_start  ;if it's not 10 then it must still be 11, in that case loop again
+    jmp wait_for_start                ;it is 10, it's a start
 
 
 stop:
-    mov isr, ~x                 ;TODO: will x always be known??
-    push
+    mov isr, ~x                       ;at this point x should always be 7, complement of x is 0xFFFFFF8
+    push                              ;push the complement of x which main thread can interpret as a stop
 
 .wrap
