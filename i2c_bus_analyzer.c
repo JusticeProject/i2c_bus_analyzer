@@ -67,20 +67,29 @@ void i2c_bus_analyzer_program_init(PIO pio, uint sm, uint offset)
 void i2c_bus_analyzer_program_restart(PIO pio, uint sm)
 {
     uint8_t pc = pio_sm_get_pc(pio, sm);
-    //printf("before restart pc = %u\n", pc);
+    printf("Restarting PIO, addr = %u\n", pc);
 
     pio_sm_set_enabled(pio, sm, false);
     pio_sm_clear_fifos(pio, sm);
+
+    // drain the inter-core queue
+    bool data_in_queue = true;
+    while (data_in_queue)
+    {
+        uint32_t dummy_data;
+        data_in_queue = queue_try_remove(&msg_queue, &dummy_data);
+    }
+
     pio_sm_restart(pio, sm);
 
     // jump to the beginning of the program when we restart
     pio_sm_exec(pio, sm, pio_encode_jmp(0));
 
     pio_sm_set_enabled(pio, sm, true);
-    //printf("done restarting the PIO\n");
+    printf("Done restarting the PIO\n");
 
     pc = pio_sm_get_pc(pio, sm);
-    //printf("after restart pc = %u\n", pc);
+    printf("PIO addr = %u\n", pc);
 }
 
 //*************************************************************************************************
@@ -89,7 +98,7 @@ void send_data_over_usb(uint32_t data)
 {
     //printf("pio_sm_get returned 0x%x    ", data);
     
-    if (data == 0xfffffff8)
+    if (0xfffffff8 == data)
     {
         printf("STOP,,,\n");
     }
@@ -97,16 +106,18 @@ void send_data_over_usb(uint32_t data)
     {
         if (data & 0x400)
         {
-            printf("START,");
-            printf("0x%x,", (data >> 2) & 0x7F);
-            printf((data & 0x2) ? "READ," : "WRITE,");
-            printf((data & 0x1) ? "NACK\n" : "ACK\n");
+            uint8_t addr = (data >> 2) & 0x7F;
+            char* read_write = (data & 0x2) ? "READ" : "WRITE";
+            char* ack_nack = (data & 0x1) ? "NACK" : "ACK";
+
+            printf("START,0x%x,%s,%s\n", addr, read_write, ack_nack);
         }
         else
         {
-            printf("BYTE,");
-            printf("0x%x,,", (data >> 1) & 0xFF);
-            printf((data & 0x1) ? "NACK\n" : "ACK\n");
+            uint8_t byte_data = (data >> 1) & 0xFF;
+            char* ack_nack = (data & 0x1) ? "NACK" : "ACK";
+
+            printf("BYTE,0x%x,,%s\n", byte_data, ack_nack);
         }
     }
 }
@@ -140,56 +151,76 @@ int main() {
     queue_init(&msg_queue, sizeof(uint32_t), 1000);
     multicore_launch_core1(core1_entry);
 
+    // the host PC will send a go command when it is ready to receive data, until that time the data 
+    // will accumulate in the inter-core queue
+    bool host_pc_is_ready = false;
+
     while (true)
     {
-        uint32_t rx;
-        bool newData = queue_try_remove(&msg_queue, &rx);
-        if (newData)
+        // only pull data from the queue if the host PC said so
+        if (host_pc_is_ready)
         {
-            send_data_over_usb(rx);
+            uint32_t rx;
+            bool newData = queue_try_remove(&msg_queue, &rx);
+            if (newData)
+            {
+                send_data_over_usb(rx);
+            }
         }
 
         int c = getchar_timeout_us(0);
         if (PICO_ERROR_TIMEOUT == c)
         {
+            // no data received from host PC, back to beginning of loop
             continue;
         }
 
-        if (c == 'h')
+        // check which command was received from host PC
+        if ('g' == c)
         {
-            printf("hello\n");
+            host_pc_is_ready = true;
         }
-        else if (c == 'r')
+        else if ('h' == c)
+        {
+            // h for hold/halt the sending of data to the host PC
+            host_pc_is_ready = false;
+        }
+        else if ('s' == c)
+        {
+            i2c_bus_analyzer_program_restart(pio, sm);
+        }
+        else if ('r' == c)
         {
             uint8_t data = 0;
             int result = test_signal_read(&data, 1);
             //printf("test_signal_read returned %d with data = 0x%x\n", result, data);
         }
-        else if (c == 'w')
+        else if ('w' == c)
         {
             int result = test_signal_write();
             //printf("test_signal_write returned %d\n", result);
         }
-        else if (c == 'e')
+        else if ('e' == c)
         {
             uint8_t buffer[2];
             int ret = test_signal_read_write(buffer, 2);
             //printf("test_signal_read_write returned %d buffer[0] = 0x%x buffer[1] = 0x%x\n", ret, buffer[0], buffer[1]);
         }
-        else if (c == 'm')
+        else if ('m' == c)
         {
             // test the MPU6050 IMU
             mpu6050_init();
         }
-        else if (c == 'n')
+        else if ('n' == c)
         {
             int16_t acceleration[3], gyro[3], temp;
             mpu6050_read_raw(acceleration, gyro, &temp);
             printf("Temp. = %f\n", (temp / 340.0) + 36.53);
         }
-        else if (c == 's')
+        else if ('z' == c)
         {
-            i2c_bus_analyzer_program_restart(pio, sm);
+            // simple debug test of communication with host PC
+            printf("hello\n");
         }
     }
 

@@ -8,6 +8,9 @@
 ;pin 0 is SDA (GPIO 0, physical pin 1)
 ;pin 1 is SCL (GPIO 1, physical pin 2)
 
+;RP2040 datasheet page 360 has example waveform for I2C.
+;The book of I2C explains start/stop bits on pages 17-19.
+
 ;Remember that we have GPIO 0 connected to GPIO2, GPIO 1 connected to GPIO 3
 ;This means SDA=0, SCL=1 will get repeated as 0b1010
 
@@ -63,7 +66,6 @@ wait_for_byte_or_start:               ;it's 11 so wait for new byte or start
     jmp x!=y check_for_start          ;if not equal to (01)01 then jump a few instructions ahead to do another check
     set x, 7                          ;it is 01, it's a byte, set up x again
     jmp wait_for_new_bit
-
 check_for_start:
     set y, 0b1010                     ;if it's 10 it's a start
     jmp x!= y wait_for_byte_or_start  ;if it's not 10 then it must still be 11, in that case loop again
