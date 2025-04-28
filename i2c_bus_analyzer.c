@@ -189,6 +189,11 @@ int main() {
         {
             i2c_bus_analyzer_program_restart(pio, sm);
         }
+        else if ('a' == c)
+        {
+            // scan the i2c bus to look for available devices
+            scan_bus();
+        }
         else if ('r' == c)
         {
             uint8_t data = 0;

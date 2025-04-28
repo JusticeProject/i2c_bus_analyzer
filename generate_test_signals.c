@@ -109,3 +109,48 @@ void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3], int16_t *temp) {
 
     *temp = buffer[0] << 8 | buffer[1];
 }
+
+//*************************************************************************************************
+
+bool reserved_addr(uint8_t addr)
+{
+    return (addr & 0x78) == 0 || (addr & 0x78) == 0x78;
+}
+
+//*************************************************************************************************
+
+void scan_bus()
+{
+    printf("\nI2C Bus Scan\n");
+    printf("@ = device found\n");
+    printf(". = no device found\n");
+    printf("  = not scanned (reserved address)\n\n");
+    printf("   0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
+
+    for (int addr = 0; addr < (1 << 7); ++addr)
+    {
+        if (addr % 16 == 0) {
+            printf("%02x ", addr);
+        }
+
+        // Perform a 1-byte dummy read from the probe address. If a peripheral
+        // acknowledges this address, the function returns the number of bytes
+        // transferred. If the address byte is ignored, the function returns
+        // -1.
+
+        // Skip over any reserved addresses.
+        if (reserved_addr(addr))
+        {
+            printf(" ");
+        }
+        else
+        {
+            uint8_t rxdata;
+            int ret = i2c_read_blocking(I2C_PORT, addr, &rxdata, 1, false);
+            printf(ret < 0 ? "." : "@");
+        }
+
+        printf(addr % 16 == 15 ? "\n" : "  ");
+    }
+    printf("Done.\n");
+}
