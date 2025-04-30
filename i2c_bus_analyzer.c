@@ -34,6 +34,12 @@ queue_t msg_queue;
 
 //*************************************************************************************************
 
+// function declarations
+bool self_test();
+bool check_byte(uint32_t msg_queue_data, uint8_t system_call_data);
+
+//*************************************************************************************************
+
 void i2c_bus_analyzer_program_init(PIO pio, uint sm, uint offset)
 {
     pio_sm_config c = i2c_bus_analyzer_program_get_default_config(offset);
@@ -222,6 +228,16 @@ int main() {
             mpu6050_read_raw(acceleration, gyro, &temp);
             printf("Temp. = %f\n", (temp / 340.0) + 36.53);
         }
+        else if ('t' == c)
+        {
+            // Self test with a ton of data.
+            // To run this:
+            // send g cmd to empty the queue
+            // then h cmd
+            // then t cmd
+            bool pass = self_test();
+            printf("Self Test result: %s\n", pass ? "PASS" : "FAIL");
+        }
         else if ('z' == c)
         {
             // simple debug test of communication with host PC
@@ -231,4 +247,144 @@ int main() {
 
     // This will free resources and unload our program
     pio_remove_program_and_unclaim_sm(&i2c_bus_analyzer_program, pio, sm, offset);
+}
+
+//*************************************************************************************************
+
+bool check_byte(uint32_t msg_queue_data, uint8_t system_call_data)
+{
+    uint8_t extracted_data = ((msg_queue_data >> 1) & 0xFF);
+    if (extracted_data == system_call_data)
+    {
+        //printf("pass\n");
+        return true;
+    }
+    else
+    {
+        printf("fail, extracted_data = 0x%x, system_call_data = 0x%x\n", extracted_data, system_call_data);
+        return false;
+    }
+}
+
+//*************************************************************************************************
+
+bool self_test()
+{
+    mpu6050_init();
+
+    const int NUM_RAW_READS = 38;
+    uint8_t buffer[14 * NUM_RAW_READS];
+
+    for (int i = 0; i < NUM_RAW_READS; i++)
+    {
+        mpu6050_read_raw_test(buffer + i*14);
+    }
+
+    sleep_ms(1);
+    printf("before checking data, msg_queue level is at %u\n", queue_get_level(&msg_queue));
+
+    bool pass = true;
+
+    uint32_t msg_queue_data;
+
+    // start bit, address
+    queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+    queue_remove_blocking(&msg_queue, &msg_queue_data);
+    pass &= check_byte(msg_queue_data, 0x6b);
+    
+    queue_remove_blocking(&msg_queue, &msg_queue_data);
+    pass &= check_byte(msg_queue_data, 0x80);
+    
+    // stop bit
+    queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    // start bit, address
+    queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+    queue_remove_blocking(&msg_queue, &msg_queue_data);
+    pass &= check_byte(msg_queue_data, 0x6b);
+    
+    queue_remove_blocking(&msg_queue, &msg_queue_data);
+    pass &= check_byte(msg_queue_data, 0x0);
+    
+    // stop bit
+    queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    int buffer_offset = 0;
+    for (int i = 0; i < NUM_RAW_READS; i++)
+    {
+        // start bit, address
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+        // byte
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+        pass &= check_byte(msg_queue_data, 0x3b);
+
+        // restart, address
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+        // 6 bytes
+        for (int j = 0; j < 6; j++)
+        {
+            queue_remove_blocking(&msg_queue, &msg_queue_data);
+            pass &= check_byte(msg_queue_data, buffer[buffer_offset]);
+            buffer_offset++;
+        }
+
+        // stop
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+        ////////////////////////////////////////////
+
+        // start bit, address
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+        // byte
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+        pass &= check_byte(msg_queue_data, 0x43);
+
+        // restart, address
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+        // 6 bytes
+        for (int j = 0; j < 6; j++)
+        {
+            queue_remove_blocking(&msg_queue, &msg_queue_data);
+            pass &= check_byte(msg_queue_data, buffer[buffer_offset]);
+            buffer_offset++;
+        }
+
+        // stop
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+        ////////////////////////////////////////////
+
+        // start bit, address
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+        // byte
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+        pass &= check_byte(msg_queue_data, 0x41);
+
+        // restart, address
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+
+        // 2 bytes
+        for (int j = 0; j < 2; j++)
+        {
+            queue_remove_blocking(&msg_queue, &msg_queue_data);
+            pass &= check_byte(msg_queue_data, buffer[buffer_offset]);
+            buffer_offset++;
+        }
+
+        // stop
+        queue_remove_blocking(&msg_queue, &msg_queue_data);
+    }
+
+    return pass;
 }

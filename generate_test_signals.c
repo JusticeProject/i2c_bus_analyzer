@@ -112,6 +112,28 @@ void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3], int16_t *temp) {
 
 //*************************************************************************************************
 
+void mpu6050_read_raw_test(uint8_t buffer[14])
+{
+    // Start reading acceleration registers from register 0x3B for 6 bytes
+    uint8_t val = 0x3B;
+    i2c_write_blocking(I2C_PORT, MPU6050_ADDR, &val, 1, true); // true to keep master control of bus
+    i2c_read_blocking(I2C_PORT, MPU6050_ADDR, buffer, 6, false);
+
+    // Now gyro data from reg 0x43 for 6 bytes
+    // The register is auto incrementing on each read
+    val = 0x43;
+    i2c_write_blocking(I2C_PORT, MPU6050_ADDR, &val, 1, true);
+    i2c_read_blocking(I2C_PORT, MPU6050_ADDR, buffer + 6, 6, false);  // False - finished with bus
+
+    // Now temperature from reg 0x41 for 2 bytes
+    // The register is auto incrementing on each read
+    val = 0x41;
+    i2c_write_blocking(I2C_PORT, MPU6050_ADDR, &val, 1, true);
+    i2c_read_blocking(I2C_PORT, MPU6050_ADDR, buffer + 12, 2, false);  // False - finished with bus
+}
+
+//*************************************************************************************************
+
 bool reserved_addr(uint8_t addr)
 {
     return (addr & 0x78) == 0 || (addr & 0x78) == 0x78;

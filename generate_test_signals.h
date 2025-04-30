@@ -11,6 +11,8 @@ int test_signal_read_write(uint8_t buffer[], size_t len);
 void mpu6050_init();
 void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3], int16_t *temp);
 
+void mpu6050_read_raw_test(uint8_t buffer[14]);
+
 bool reserved_addr(uint8_t addr);
 void scan_bus();
 
