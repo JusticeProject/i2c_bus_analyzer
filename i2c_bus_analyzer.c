@@ -14,11 +14,11 @@
 //*************************************************************************************************
 
 // NOTE!!!!
-// This code works with the PicoW but not the Pico. This is because GPIOs 24 and 25 are
+// This code works with the PicoW but not the Pico. This is because GPIO 24 is
 // different between the two and it causes problems in the PIO state machine code when 
 // moving all the pins to the x/y registers. Could try switching to in instructions but we
-// might start running out of space in the PIO program. Or could try setting GPIOs 24 and
-// 25 to outputs and driving them low - would need to check the schematic.
+// might start running out of space in the PIO program. Or could try setting GPIO 24
+// to output and driving it low - would need to double check the schematic.
 // 
 // We will actually use GPIO 0 and 1, which are pins 1,2 on the pico board.
 // Connect the I2C device being tested to GPIO 0 (SDA) and GPIO 1 (SCL).
