@@ -155,10 +155,13 @@ void scan_bus()
             printf("%02x ", addr);
         }
 
-        // Perform a 1-byte dummy read from the probe address. If a peripheral
-        // acknowledges this address, the function returns the number of bytes
-        // transferred. If the address byte is ignored, the function returns
-        // -1.
+        // Perform a 1-byte dummy read at the current address using i2c_read_blocking().
+        // If a peripheral acknowledges this address, the function returns the number of bytes
+        // transferred.
+        // We try to read 1 byte so the device will transfer 1 byte to us if it supports that operation.
+        // If the device is there but doesn't support reading then the function call returns 0 bytes read??
+        // Or does it return 1 byte read with the data being 0x00??
+        // If the address is ignored (no device on the bus with that address), the function returns -1. 
 
         // Skip over any reserved addresses.
         if (reserved_addr(addr))
