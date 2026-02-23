@@ -13,12 +13,9 @@
 
 //*************************************************************************************************
 
-// NOTE!!!!
-// This code works with the PicoW but not the Pico. This is because GPIO 24 is
-// different between the two and it causes problems in the PIO state machine code when 
-// moving all the pins to the x/y registers. Could try switching to in instructions but we
-// might start running out of space in the PIO program. Or could try setting GPIO 24
-// to output and driving it low - would need to double check the schematic.
+// Updated Feb 23, 2026 to work with the standard Pico. Previously it was developed and tested
+// on the PicoW. If using the PicoW then change the CMakeLists.txt file to use:
+// set(PICO_BOARD pico_w CACHE STRING "Board type")
 // 
 // We will actually use GPIO 0 and 1, which are pins 1,2 on the pico board.
 // Connect the I2C device being tested to GPIO 0 (SDA) and GPIO 1 (SCL).
@@ -150,6 +147,17 @@ void core1_entry()
 
 int main() {
     stdio_init_all();
+
+    #ifdef RASPBERRYPI_PICO
+        // Detect if we are using the standard Pico board. This does not apply to the PicoW. Don't
+        // know if it applies to Pico 2.
+        // The standard Pico board uses GPIO 24 to measure Vbus through a resistor divider.
+        // If it remains in the default state (as an input) it will measure a logic 1 and cause problems 
+        // in the PIO state machine code. So we init GPIO24 and set it to 0V.
+        gpio_init(PICO_VBUS_PIN);
+        gpio_set_dir(PICO_VBUS_PIN, GPIO_OUT);
+        gpio_put(PICO_VBUS_PIN, false);
+    #endif
 
     // This will activate pull-ups, so the i2c bus will be in a known state when we start PIO right after this.
     // If the i2c bus pins are pulled low by default then rise it could cause problems in the PIO state machine logic.
